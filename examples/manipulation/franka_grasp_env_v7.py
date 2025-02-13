@@ -251,11 +251,9 @@ class FrankaGraspEnv:
             )
         )
 
-        # NEW: Update reached target state
         target_distance = torch.norm(self.cube_pos - self.target_pos, dim=-1)
         self.reached_target = ((self.reached_cube > 0.5) * (target_distance < 0.02)).float()
 
-        # Check termination and perform resets if needed
         self.reset_buf = (self.episode_length_buf >= self.max_episode_length)
         reset_env_ids = (self.reset_buf > 0).nonzero(as_tuple=False).flatten()
         self.reset_idx(reset_env_ids)
@@ -263,7 +261,7 @@ class FrankaGraspEnv:
         self.rew_buf[:] = 0.0
         for name, fn in self.reward_functions.items():
             rew = fn()
-            start_ep, end_ep = 100 * self.train_cfg['runner']['num_steps_per_env'], 1000 * self.train_cfg['runner']['num_steps_per_env']
+            start_ep, end_ep = 200 * self.train_cfg['runner']['num_steps_per_env'], 1000 * self.train_cfg['runner']['num_steps_per_env']
             if (name == "robot_target_qpos" or name == "no_floor_collision"):
                 if self.num_steps > start_ep:
                     _scale = self.reward_scales[name] * min(1, max(0, (self.num_steps - start_ep) / (end_ep - start_ep)))
@@ -348,9 +346,9 @@ class FrankaGraspEnv:
         self.cube_handles.set_pos(cube_pos_reset, zero_velocity=True, envs_idx=env_ids)
 
         # NEW: Set target position as an offset from the cube's reset position
-        target_offset_range_x = self.env_cfg.get("target_offset_range_x", [-0.1, 0.1])
-        target_offset_range_y = self.env_cfg.get("target_offset_range_y", [-0.1, 0.1])
-        target_offset_range_z = self.env_cfg.get("target_offset_range_z", [0.0, 0.0])
+        target_offset_range_x = self.env_cfg.get("target_offset_range_x")
+        target_offset_range_y = self.env_cfg.get("target_offset_range_y")
+        target_offset_range_z = self.env_cfg.get("target_offset_range_z")
         target_offset_x = gs_rand_float(target_offset_range_x[0], target_offset_range_x[1], (len(env_ids),), self.device)
         target_offset_y = gs_rand_float(target_offset_range_y[0], target_offset_range_y[1], (len(env_ids),), self.device)
         target_offset_z = gs_rand_float(target_offset_range_z[0], target_offset_range_z[1], (len(env_ids),), self.device)
@@ -358,11 +356,9 @@ class FrankaGraspEnv:
         new_target_pos = cube_pos_reset + target_offsets
         self.target_pos[env_ids] = new_target_pos
 
-        # Reset counters
         self.episode_length_buf[env_ids] = 0
         self.reset_buf[env_ids] = 0
 
-        # Logging extras
         self.extras["episode"] = {}
         for key in self.episode_sums:
             if key in self.reward_scales:
@@ -409,8 +405,8 @@ class FrankaGraspEnv:
         gripper_pos = (self.finger_joint1_pos + self.finger_joint2_pos) / 2.0
         gripper_box = 1 - torch.tanh(5 * torch.norm(self.cube_pos - gripper_pos, dim=-1))
     
-        # Robot target qpos reward: based on how close the robot joints are to default
-        joint_err = torch.norm(self.dof_pos - self.default_dof_pos, dim=-1)
+        # Robot target qpos reward: how close the robot joints are to default. ignore fingers.
+        joint_err = torch.norm((self.dof_pos - self.default_dof_pos)[:, :-2], dim=-1)
         robot_target_qpos = 1 - torch.tanh(5 * joint_err)
 
         contacts = self.plane.get_contacts(with_entity=self.franka)

@@ -46,7 +46,7 @@ def get_train_cfg(exp_name, max_iterations):
             "resume_path": None,
             "run_name": "",
             "save_interval": 100,
-            "eval_interval": 100,
+            "eval_interval": 50,
         },
         "runner_class_name": "OnPolicyRunner",
         "seed": 1,
@@ -94,7 +94,7 @@ def get_cfgs():
         "cube_spawn_range_y": [-0.1, 0.1],
         "target_offset_range_x": [-0.1, 0.1],
         "target_offset_range_y": [-0.1, 0.1],
-        "target_offset_range_z": [0.0, 0.05],
+        "target_offset_range_z": [0.2, 0.6],
     }
     obs_cfg = {
         # 9 dof pos, 9 dof vel, 2 dof force, 3 cube pos, 4 cube quat,
@@ -110,7 +110,7 @@ def get_cfgs():
             "gripper_box": 4.0,
             "box_target": 8.0,
             "robot_target_qpos": 0.3,
-            "no_floor_collision": 1.0,
+            "no_floor_collision": 0.25,
             "is_target_reached": 8.0,
             "is_grasped": 16.0,
         },
