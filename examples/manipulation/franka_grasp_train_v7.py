@@ -40,13 +40,13 @@ def get_train_cfg(exp_name, max_iterations):
             "load_run": -1,
             "log_interval": 1,
             "max_iterations": max_iterations,
-            "num_steps_per_env": 96,
+            "num_steps_per_env": 100,
             "record_interval": -1,
             "resume": False,
             "resume_path": None,
             "run_name": "",
-            "save_interval": 50,
-            "eval_interval": 200,
+            "save_interval": 100,
+            "eval_interval": 100,
         },
         "runner_class_name": "OnPolicyRunner",
         "seed": 1,
@@ -80,9 +80,9 @@ def get_cfgs():
         "clip_actions": 1.0,
         "clip_actions_fingers": 1.0,
         "action_scale": 3.14159,
-        "action_scale_fingers": 10.0,
+        "action_scale_fingers": 5.0,
         "smooth_tanh_lam": 0.2098612289,
-        "smooth_tanh_lam_fingers": 0.2098612289,
+        "smooth_tanh_lam_fingers": 0.1098612289,
         "dt": 0.02,
         "substeps": 4,
         "episode_length_s": 4,
@@ -162,11 +162,11 @@ def main():
         command_cfg=command_cfg,
         show_viewer=False,
         device=device,
-        save_video=args.save_video,
+        save_video=False,
     )
 
     eval_env = FrankaGraspEnv(
-        num_envs=1,
+        num_envs=1 if args.save_video else args.num_envs,
         env_cfg=env_cfg,
         obs_cfg=obs_cfg,
         train_cfg=train_cfg,
@@ -174,8 +174,8 @@ def main():
         command_cfg=command_cfg,
         show_viewer=False,
         device="cuda",
-        save_video=args.save_video,
-        add_camera=True,
+        save_video=False,
+        add_camera=args.save_video,
     )
 
     runner = OnPolicyRunner(env, train_cfg, log_dir, device=device, eval_env=eval_env)
@@ -196,35 +196,6 @@ def main():
 
     print(f"Finished training")
     print(f"Experiment name: {args.exp_name}")
-    exit()
-    del env
-    env = FrankaGraspEnv(
-        num_envs=1,
-        env_cfg=env_cfg,
-        obs_cfg=obs_cfg,
-        reward_cfg=reward_cfg,
-        command_cfg=command_cfg,
-        show_viewer=False,
-        device="cuda",
-        save_video=args.save_video,
-        add_camera=True,
-    )
-
-    env.cam.start_recording()
-    policy = runner.get_inference_policy(device="cuda")
-    for _ in range(3):
-        obs, _ = env.reset()
-        idx = 0
-        with torch.no_grad():
-            while True:
-                env.cam.render()
-                actions = policy(obs)
-                obs, _, _, dones, infos = env.step(actions)
-                idx += 1
-                if idx > env_cfg['episode_length_s'] / env_cfg['dt']:
-                    break
-
-    env.cam.stop_recording(save_to_filename=f'video_{args.exp_name}.mp4', fps=50)
 
 if __name__ == "__main__":
     main()

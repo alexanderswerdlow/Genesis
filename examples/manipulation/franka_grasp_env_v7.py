@@ -205,7 +205,7 @@ class FrankaGraspEnv:
 
     def step(self, actions):
         self.num_steps += 1
-        
+
         # self.actions = actions
         # self.actions[:, :-2] = smooth_tanh(self.actions[:, :-2], lam=self.env_cfg.get("smooth_tanh_lam", 0.2098612289))
         # self.actions[:, -2:] = smooth_tanh(self.actions[:, -2:], lam=self.env_cfg.get("smooth_tanh_lam_fingers", 0.2098612289))
@@ -226,7 +226,6 @@ class FrankaGraspEnv:
         self.franka.control_dofs_force(target_dof_force, self.finger_dofs)
         
         self.scene.step()
-
         self.episode_length_buf += 1
 
         self.dof_pos[:] = self.franka.get_dofs_position(self.motor_dofs)
@@ -261,7 +260,6 @@ class FrankaGraspEnv:
         reset_env_ids = (self.reset_buf > 0).nonzero(as_tuple=False).flatten()
         self.reset_idx(reset_env_ids)
 
-        # Compute rewards from all components
         self.rew_buf[:] = 0.0
         for name, fn in self.reward_functions.items():
             rew = fn()
