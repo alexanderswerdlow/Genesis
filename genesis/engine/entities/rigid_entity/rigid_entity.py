@@ -2254,90 +2254,154 @@ class RigidEntity(Entity):
 
     @gs.assert_built
     def get_contacts(self, with_entity=None):
-        """
-        Returns contact information computed during the most recent `scene.step()`.
-        If `with_entity` is provided, only returns contact information involving the caller entity and the specified `with_entity`. Otherwise, returns all contact information involving the caller entity.
+        # Assume contact_data and n_contacts are already torch tensors.
+        scene_contact_info = self._solver.collider.contact_data
+        n_contacts = self._solver.collider.n_contacts
 
-        The returned dict contains the following keys (a contact pair consists of two geoms: A and B):
-
-        - 'geom_a'     : The global geom index of geom A in the contact pair. (actual geom object can be obtained by scene.rigid_solver.geoms[geom_a])
-        - 'geom_b'     : The global geom index of geom B in the contact pair. (actual geom object can be obtained by scene.rigid_solver.geoms[geom_b])
-        - 'link_a'     : The global link index of link A (that contains geom A) in the contact pair. (actual link object can be obtained by scene.rigid_solver.links[link_a])
-        - 'link_b'     : The global link index of link B (that contains geom B) in the contact pair. (actual link object can be obtained by scene.rigid_solver.links[link_b])
-        - 'position'   : The contact position in world frame.
-        - 'force_a'    : The contact force applied to geom A.
-        - 'force_b'    : The contact force applied to geom B.
-        - 'valid_mask' : (Only when scene is parallelized) A boolean mask indicating whether the contact information is valid.
-
-        The shape of each entry is (n_envs, n_contacts, ...) for scene with parallel envs, and (n_contacts, ...) for non-parallelized scene.
-
-        Parameters
-        ----------
-        with_entity : RigidEntity, optional
-            The entity to check contact with. Defaults to None.
-
-        Returns
-        -------
-        contact_info : dict
-            The contact information.
-        """
-
-        scene_contact_info = self._solver.collider.contact_data.to_numpy()
-        n_contacts = self._solver.collider.n_contacts.to_numpy()
-
-        valid_mask = np.logical_or(
-            np.logical_and(
-                scene_contact_info["geom_a"] >= self.geom_start,
-                scene_contact_info["geom_a"] < self.geom_end,
+        valid_mask = torch.logical_or(
+            torch.logical_and(
+                scene_contact_info.geom_a.to_torch(device='cuda') >= self.geom_start,
+                scene_contact_info.geom_a.to_torch(device='cuda') < self.geom_end,
             ),
-            np.logical_and(
-                scene_contact_info["geom_b"] >= self.geom_start,
-                scene_contact_info["geom_b"] < self.geom_end,
+            torch.logical_and(
+                scene_contact_info.geom_b.to_torch(device='cuda') >= self.geom_start,
+                scene_contact_info.geom_b.to_torch(device='cuda') < self.geom_end,
             ),
         )
+
         if with_entity is not None:
             if self.idx == with_entity.idx:
                 gs.raise_exception("`with_entity` cannot be the same as the caller entity.")
-
-            valid_mask = np.logical_and(
+            valid_mask = torch.logical_and(
                 valid_mask,
-                np.logical_or(
-                    np.logical_and(
-                        scene_contact_info["geom_a"] >= with_entity.geom_start,
-                        scene_contact_info["geom_a"] < with_entity.geom_end,
+                torch.logical_or(
+                    torch.logical_and(
+                        scene_contact_info.geom_a.to_torch(device='cuda') >= with_entity.geom_start,
+                        scene_contact_info.geom_a.to_torch(device='cuda') < with_entity.geom_end,
                     ),
-                    np.logical_and(
-                        scene_contact_info["geom_b"] >= with_entity.geom_start,
-                        scene_contact_info["geom_b"] < with_entity.geom_end,
+                    torch.logical_and(
+                        scene_contact_info.geom_b.to_torch(device='cuda') >= with_entity.geom_start,
+                        scene_contact_info.geom_b.to_torch(device='cuda') < with_entity.geom_end,
                     ),
                 ),
             )
-        valid_mask = np.logical_and(valid_mask, np.arange(valid_mask.shape[0])[:, None] < n_contacts)
+
+        # Create an index tensor for contacts and compare against per-env n_contacts.
+        # Assumes valid_mask.shape[0] corresponds to the maximum number of contacts.
+        contact_indices = torch.arange(valid_mask.shape[0], device=valid_mask.device).unsqueeze(1)
+        valid_mask = torch.logical_and(valid_mask, contact_indices < n_contacts.to_torch(device='cuda'))
 
         if self._solver.n_envs == 0:
-            valid_idx = np.where(valid_mask.squeeze())[0]
+            valid_idx = torch.nonzero(valid_mask.squeeze(), as_tuple=True)[0]
             contact_info = {
-                "geom_a": scene_contact_info["geom_a"][valid_idx, 0],
-                "geom_b": scene_contact_info["geom_b"][valid_idx, 0],
-                "link_a": scene_contact_info["link_a"][valid_idx, 0],
-                "link_b": scene_contact_info["link_b"][valid_idx, 0],
-                "position": scene_contact_info["pos"][valid_idx, 0],
-                "force_a": -scene_contact_info["force"][valid_idx, 0],
-                "force_b": scene_contact_info["force"][valid_idx, 0],
+                "geom_a": scene_contact_info.geom_a.to_torch(device='cuda')[valid_idx, 0],
+                "geom_b": scene_contact_info.geom_b.to_torch(device='cuda')[valid_idx, 0],
+                "link_a": scene_contact_info.link_a.to_torch(device='cuda')[valid_idx, 0],
+                "link_b": scene_contact_info.link_b.to_torch(device='cuda')[valid_idx, 0],
+                "position": scene_contact_info.pos.to_torch(device='cuda')[valid_idx, 0],
+                "force_a": -scene_contact_info.force.to_torch(device='cuda')[valid_idx, 0],
+                "force_b": scene_contact_info.force.to_torch(device='cuda')[valid_idx, 0],
             }
         else:
-            max_env_collisions = np.max(n_contacts)
+            max_env_collisions = int(torch.max(n_contacts.to_torch(device='cuda')).item())
             contact_info = {
-                "geom_a": scene_contact_info["geom_a"][:max_env_collisions].T,
-                "geom_b": scene_contact_info["geom_b"][:max_env_collisions].T,
-                "link_a": scene_contact_info["link_a"][:max_env_collisions].T,
-                "link_b": scene_contact_info["link_b"][:max_env_collisions].T,
-                "position": scene_contact_info["pos"][:max_env_collisions].transpose([1, 0, 2]),
-                "force_a": -scene_contact_info["force"][:max_env_collisions].transpose([1, 0, 2]),
-                "force_b": scene_contact_info["force"][:max_env_collisions].transpose([1, 0, 2]),
-                "valid_mask": valid_mask[:max_env_collisions].T,
+                "geom_a": scene_contact_info.geom_a.to_torch(device='cuda')[:max_env_collisions].t(),
+                "geom_b": scene_contact_info.geom_b.to_torch(device='cuda')[:max_env_collisions].t(),
+                "link_a": scene_contact_info.link_a.to_torch(device='cuda')[:max_env_collisions].t(),
+                "link_b": scene_contact_info.link_b.to_torch(device='cuda')[:max_env_collisions].t(),
+                "position": scene_contact_info.pos.to_torch(device='cuda')[:max_env_collisions].permute(1, 0, 2),
+                "force_a": -scene_contact_info.force.to_torch(device='cuda')[:max_env_collisions].permute(1, 0, 2),
+                "force_b": scene_contact_info.force.to_torch(device='cuda')[:max_env_collisions].permute(1, 0, 2),
+                "valid_mask": valid_mask[:max_env_collisions].t(),
             }
         return contact_info
+
+    # @gs.assert_built
+    # def get_contacts(self, with_entity=None):
+    #     """
+    #     Returns contact information computed during the most recent `scene.step()`.
+    #     If `with_entity` is provided, only returns contact information involving the caller entity and the specified `with_entity`. Otherwise, returns all contact information involving the caller entity.
+
+    #     The returned dict contains the following keys (a contact pair consists of two geoms: A and B):
+
+    #     - 'geom_a'     : The global geom index of geom A in the contact pair. (actual geom object can be obtained by scene.rigid_solver.geoms[geom_a])
+    #     - 'geom_b'     : The global geom index of geom B in the contact pair. (actual geom object can be obtained by scene.rigid_solver.geoms[geom_b])
+    #     - 'link_a'     : The global link index of link A (that contains geom A) in the contact pair. (actual link object can be obtained by scene.rigid_solver.links[link_a])
+    #     - 'link_b'     : The global link index of link B (that contains geom B) in the contact pair. (actual link object can be obtained by scene.rigid_solver.links[link_b])
+    #     - 'position'   : The contact position in world frame.
+    #     - 'force_a'    : The contact force applied to geom A.
+    #     - 'force_b'    : The contact force applied to geom B.
+    #     - 'valid_mask' : (Only when scene is parallelized) A boolean mask indicating whether the contact information is valid.
+
+    #     The shape of each entry is (n_envs, n_contacts, ...) for scene with parallel envs, and (n_contacts, ...) for non-parallelized scene.
+
+    #     Parameters
+    #     ----------
+    #     with_entity : RigidEntity, optional
+    #         The entity to check contact with. Defaults to None.
+
+    #     Returns
+    #     -------
+    #     contact_info : dict
+    #         The contact information.
+    #     """
+
+    #     scene_contact_info = self._solver.collider.contact_data.to_numpy()
+    #     n_contacts = self._solver.collider.n_contacts.to_numpy()
+
+    #     valid_mask = np.logical_or(
+    #         np.logical_and(
+    #             scene_contact_info["geom_a"] >= self.geom_start,
+    #             scene_contact_info["geom_a"] < self.geom_end,
+    #         ),
+    #         np.logical_and(
+    #             scene_contact_info["geom_b"] >= self.geom_start,
+    #             scene_contact_info["geom_b"] < self.geom_end,
+    #         ),
+    #     )
+    #     if with_entity is not None:
+    #         if self.idx == with_entity.idx:
+    #             gs.raise_exception("`with_entity` cannot be the same as the caller entity.")
+
+    #         valid_mask = np.logical_and(
+    #             valid_mask,
+    #             np.logical_or(
+    #                 np.logical_and(
+    #                     scene_contact_info["geom_a"] >= with_entity.geom_start,
+    #                     scene_contact_info["geom_a"] < with_entity.geom_end,
+    #                 ),
+    #                 np.logical_and(
+    #                     scene_contact_info["geom_b"] >= with_entity.geom_start,
+    #                     scene_contact_info["geom_b"] < with_entity.geom_end,
+    #                 ),
+    #             ),
+    #         )
+    #     valid_mask = np.logical_and(valid_mask, np.arange(valid_mask.shape[0])[:, None] < n_contacts)
+
+    #     if self._solver.n_envs == 0:
+    #         valid_idx = np.where(valid_mask.squeeze())[0]
+    #         contact_info = {
+    #             "geom_a": scene_contact_info["geom_a"][valid_idx, 0],
+    #             "geom_b": scene_contact_info["geom_b"][valid_idx, 0],
+    #             "link_a": scene_contact_info["link_a"][valid_idx, 0],
+    #             "link_b": scene_contact_info["link_b"][valid_idx, 0],
+    #             "position": scene_contact_info["pos"][valid_idx, 0],
+    #             "force_a": -scene_contact_info["force"][valid_idx, 0],
+    #             "force_b": scene_contact_info["force"][valid_idx, 0],
+    #         }
+    #     else:
+    #         max_env_collisions = np.max(n_contacts)
+    #         contact_info = {
+    #             "geom_a": scene_contact_info["geom_a"][:max_env_collisions].T,
+    #             "geom_b": scene_contact_info["geom_b"][:max_env_collisions].T,
+    #             "link_a": scene_contact_info["link_a"][:max_env_collisions].T,
+    #             "link_b": scene_contact_info["link_b"][:max_env_collisions].T,
+    #             "position": scene_contact_info["pos"][:max_env_collisions].transpose([1, 0, 2]),
+    #             "force_a": -scene_contact_info["force"][:max_env_collisions].transpose([1, 0, 2]),
+    #             "force_b": scene_contact_info["force"][:max_env_collisions].transpose([1, 0, 2]),
+    #             "valid_mask": valid_mask[:max_env_collisions].T,
+    #         }
+    #     return contact_info
 
     def get_links_net_contact_force(self):
         """

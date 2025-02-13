@@ -83,11 +83,13 @@ def main():
         quat=np.array([0, 1, 0, 0]),
     )
     qpos[-2:] = 0.03
+    breakpoint()
     franka.set_dofs_position(qpos[:-2], motors_dof)
     franka.set_dofs_position(qpos[-2:], fingers_dof)
 
     # grasp with 1N force
     franka.control_dofs_position(qpos[:-2], motors_dof)
+    breakpoint()
     franka.control_dofs_force(np.array([-1, -1]), fingers_dof)
     # franka.control_dofs_position(np.array([0, 0]), fingers_dof) # you can also use position control
 
@@ -101,6 +103,7 @@ def main():
             pos=np.array([0.64, 0.0, 0.135 + 0.0005 * i]),
             quat=np.array([0, 1, 0, 0]),
         )
+        breakpoint()
         franka.control_dofs_position(qpos[:-2], motors_dof)
         scene.step()
 
