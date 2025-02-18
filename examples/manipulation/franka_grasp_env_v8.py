@@ -67,33 +67,78 @@ class FrankaGraspEnv:
                 max_FPS=int(1.0 / self.dt),
             )
 
+        if env_cfg["use_jenga"]:
+            scene_kwargs["rigid_options"] = gs.options.RigidOptions(
+                dt=self.dt / 4,
+                constraint_solver=gs.constraint_solver.Newton,
+                # use_contact_island=True,
+                # use_hibernation=True,
+            )
+
         # Create the scene
         self.scene = gs.Scene(
-            sim_options=gs.options.SimOptions(dt=self.dt),
+            sim_options=gs.options.SimOptions(dt=self.dt, substeps=self.env_cfg["substeps"]),
             show_viewer=show_viewer,
             **scene_kwargs,
         )
 
         # Add a plane (the table/floor)
         self.plane = self.scene.add_entity(gs.morphs.Plane())
+        self.use_jenga = env_cfg["use_jenga"]
+        if self.use_jenga:
+            # self.jenga = self.scene.add_entity(
+            #     gs.morphs.MJCF(file='examples/manipulation/jenga.xml'),
+            # )
+            # self.cube_handles = self.jenga.links[-2]
 
-        # Add the cube. Here we use a small rigid or MPM-based box. 
-        # Adjust size/material as you wish.
-        self.cube_size = env_cfg["cube_size"]
-        self.cube_init_z = env_cfg["cube_init_z"]  # e.g., on table
-        self.cube_handles = self.scene.add_entity(
-            morph=gs.morphs.Box(
-                size=(self.cube_size, self.cube_size, self.cube_size),
-                pos=(env_cfg["cube_init_x"], env_cfg["cube_init_y"], self.cube_init_z),
-            ),
-        )
+            num_layers = 3
+            scale_factor = 1.0
+            base_pos = (0.0, 0.0, 0.05)
+            block_height = (0.04 * scale_factor) + 5e-3
+            delta_x = (0.05 * scale_factor) + 5e-3
 
-        # ex: MJCF with "xml/franka_emika_panda/panda.xml", or URDF version
+            self.jenga = []
+            for layer in range(num_layers):
+                euler = (0, 0, (layer % 2) * 90)
+                z_pos = base_pos[2] + layer * block_height        
+                offsets = [
+                    (0, -delta_x, 0),  # Left block
+                    (0, 0, 0),      # Center block
+                    (0, delta_x, 0)    # Right block
+                ] if layer % 2 == 0 else [
+                    (-delta_x, 0, 0),  # Left block
+                    (0, 0, 0),      # Center block
+                    (delta_x, 0, 0)    # Right block
+                ]
+                
+                for dx, dy, dz in offsets:
+                    self.jenga.append(self.scene.add_entity(
+                        gs.morphs.URDF(
+                            file="examples/manipulation/assets/jenga.urdf",
+                            pos=(
+                                base_pos[0] + dx,
+                                base_pos[1] + dy,
+                                z_pos
+                            ),
+                            euler=euler,
+                            scale=scale_factor,
+                            fixed=False,
+                        )
+                    ))
+            self.cube_handles = self.jenga[-1]
+            self.jenga_base = self.jenga[:-1]
+        else:
+            self.cube_size = env_cfg["cube_size"]
+            self.cube_init_z = env_cfg["cube_init_z"]  # e.g., on table
+            self.cube_handles = self.scene.add_entity(
+                morph=gs.morphs.Box(
+                    size=(self.cube_size, self.cube_size, self.cube_size),
+                    pos=(env_cfg["cube_init_x"], env_cfg["cube_init_y"], self.cube_init_z),
+                ),
+            )
+        
         self.franka = self.scene.add_entity(
             gs.morphs.MJCF(file=env_cfg["franka_mjcf_path"]),
-            # material=gs.materials.Rigid(coup_friction=1.0),
-            # visualize_contact=True,
-            # vis_mode="collision",
         )
         
         self.save_video = save_video
@@ -110,6 +155,10 @@ class FrankaGraspEnv:
         # Build the scene
         self.scene.build(n_envs=num_envs)
 
+        if self.use_jenga:
+            self.num_obs += len(self.jenga) * 7
+            assert sum(_jenga.get_qpos().shape[-1] for _jenga in self.jenga) == len(self.jenga) * 7
+
         # Identify dofs for the Franka – typically 7 arm joints + 2 fingers
         self.arm_dofs = list(range(7))
         self.finger_dofs = list(range(7, 9))
@@ -123,7 +172,6 @@ class FrankaGraspEnv:
             np.array(env_cfg["force_upper"]),
         )
 
-        # Prepare reward functions
         self.reward_functions = {}
         self.episode_sums = {}
         for name in self.reward_scales:
@@ -141,24 +189,12 @@ class FrankaGraspEnv:
         self.episode_sums["met_is_target_reached"] = torch.zeros((self.num_envs,), device=self.device, dtype=gs.tc_float)
         self.episode_sums["met_is_grasped"] = torch.zeros((self.num_envs,), device=self.device, dtype=gs.tc_float)
         self.episode_sums["met_total_reward"] = torch.zeros((self.num_envs,), device=self.device, dtype=gs.tc_float)
-        # Buffers
+
         self.obs_buf = torch.zeros((num_envs, self.num_obs), device=self.device, dtype=gs.tc_float)
         self.rew_buf = torch.zeros((num_envs,), device=self.device, dtype=gs.tc_float)
         self.reset_buf = torch.ones((num_envs,), device=self.device, dtype=gs.tc_int)
         self.episode_length_buf = torch.zeros((num_envs,), device=self.device, dtype=gs.tc_int)
 
-        self.actions = torch.zeros((num_envs, self.num_actions), device=self.device, dtype=gs.tc_float)
-        self.dof_pos = torch.zeros((num_envs, self.num_actions), device=self.device, dtype=gs.tc_float)
-        self.dof_vel = torch.zeros((num_envs, self.num_actions), device=self.device, dtype=gs.tc_float)
-        self.dof_force = torch.zeros((num_envs, len(self.finger_dofs)), device=self.device, dtype=gs.tc_float)
-
-        self.cube_pos = torch.zeros((num_envs, 3), device=self.device, dtype=gs.tc_float)
-        self.cube_quat = torch.zeros((num_envs, 4), device=self.device, dtype=gs.tc_float)
-
-        self.finger_joint1_pos = torch.zeros((num_envs, 3), device=self.device, dtype=gs.tc_float)
-        self.finger_joint2_pos = torch.zeros((num_envs, 3), device=self.device, dtype=gs.tc_float)
-
-        # Default joint angles, e.g. an upright pose, fingers open
         self.default_dof_pos = torch.tensor(
             [
                 env_cfg["default_joint_angles"][name]
@@ -167,8 +203,19 @@ class FrankaGraspEnv:
             device=self.device,
             dtype=gs.tc_float,
         )
+        self.num_dof = len(self.default_dof_pos)
 
-        # NEW: Create handles for both finger joints
+        self.actions = torch.zeros((num_envs, self.num_actions), device=self.device, dtype=gs.tc_float)
+        self.dof_pos = torch.zeros((num_envs, self.num_dof), device=self.device, dtype=gs.tc_float)
+        self.dof_vel = torch.zeros((num_envs, self.num_dof), device=self.device, dtype=gs.tc_float)
+        self.dof_force = torch.zeros((num_envs, len(self.finger_dofs)), device=self.device, dtype=gs.tc_float)
+
+        self.cube_pos = torch.zeros((num_envs, 3), device=self.device, dtype=gs.tc_float)
+        self.cube_quat = torch.zeros((num_envs, 4), device=self.device, dtype=gs.tc_float)
+
+        self.finger_joint1_pos = torch.zeros((num_envs, 3), device=self.device, dtype=gs.tc_float)
+        self.finger_joint2_pos = torch.zeros((num_envs, 3), device=self.device, dtype=gs.tc_float)
+
         self.finger_joint1_handle = self.franka.get_joint("finger_joint1")
         self.finger_joint2_handle = self.franka.get_joint("finger_joint2")
 
@@ -186,21 +233,69 @@ class FrankaGraspEnv:
             self.franka.get_joint("finger_joint1").link.idx,
             self.franka.get_joint("finger_joint2").link.idx,
         ], device=self.device, dtype=gs.tc_int)
-
-        self.reset()
+        
         self.num_steps = 0
         self.iter = 0
+
+        self.clamp_arr = torch.tensor([
+            [-2.897, -1.763, -2.897, -3.072, -2.897, -0.018, -2.897,  0.   ],
+            [ 2.897,  1.763,  2.897, -0.07 ,  2.897,  3.752,  2.897,  0.08 ]
+        ], device=self.device, dtype=gs.tc_float)
+
+        if self.use_jenga:
+            if self.add_camera:
+                self.cam.start_recording()
+
+            jenga = self.jenga
+            for _jenga in jenga:
+                for i in range(len(_jenga.links)):
+                    q_idxs = _jenga.links[i].joint.q_idx_local
+                    cur_pos = _jenga.get_qpos(qs_idx_local=q_idxs)
+                    delta = torch.zeros_like(cur_pos)
+                    delta[..., :3] = torch.tensor([0.4, 0.4, 0.0], device=cur_pos.device)
+                    _jenga.set_qpos(cur_pos + delta, qs_idx_local=q_idxs)
+
+            self.pre_init_jenga_pos = torch.stack([
+                _jenga.get_qpos()
+                for _jenga in self.jenga
+            ], dim=1)
+
+            settle_steps = self.env_cfg.get("settle_steps", 50)
+            for _ in range(settle_steps):
+                self.scene.step()
+                if self.add_camera:
+                    self.cam.render()
+
+            if self.add_camera:
+                self.cam.stop_recording(save_to_filename=f'video_jenga_v0.mp4', fps=1 / self.dt)
+
+            self.init_jenga_pos = torch.stack([
+                _jenga.get_qpos()
+                for _jenga in self.jenga
+            ], dim=1)
+            self.init_jenga_vel = torch.stack([
+                _jenga.get_dofs_velocity()
+                for _jenga in self.jenga
+            ], dim=1)
+
+            for i in range(len(self.jenga)):
+                assert len(self.jenga[i].links) == 1
+
+        self.reset()
 
     def step(self, actions):
         self.num_steps += 1
 
-        self.actions[:, :-2] = smooth_tanh(self.actions[:, :-2], lam=self.env_cfg.get("smooth_tanh_lam", 0.2098612289))
-        self.actions[:, -2:] = smooth_tanh(self.actions[:, -2:], lam=self.env_cfg.get("smooth_tanh_lam_fingers", 0.2098612289))
-
-        target_dof_pos = self.actions[:, :-2] * self.env_cfg["action_scale"]
-        target_dof_force = self.actions[:, -2:] * self.env_cfg["action_scale_fingers"]
-        self.franka.control_dofs_position(target_dof_pos + self.default_dof_pos[:-2], self.arm_dofs)
-        self.franka.control_dofs_force(target_dof_force, self.finger_dofs)
+        actions = torch.tanh(actions)
+        delta = actions
+        delta[:, :-1] *= self.env_cfg["action_scale"]
+        delta[:, -1:] *= self.env_cfg["action_scale_fingers"]
+        ctrl = self.actions + delta
+        ctrl = torch.clamp(ctrl, min=self.clamp_arr[None, 0, :], max=self.clamp_arr[None, 1, :])
+        self.actions[:] = ctrl
+        final_act = torch.cat([self.actions, torch.zeros_like(self.actions[:, -1:])], dim=-1)
+        final_act[:, -2:] = (self.actions[:, -1] / 2.0)[:, None]
+        self.franka.control_dofs_position(final_act, self.motor_dofs)
         
         self.scene.step()
         self.episode_length_buf += 1
@@ -229,10 +324,6 @@ class FrankaGraspEnv:
         target_distance = torch.norm(self.cube_pos - self.target_pos, dim=-1)
         self.reached_target = ((self.reached_cube > 0.5) * (target_distance < 0.02)).float()
 
-        self.reset_buf = (self.episode_length_buf >= self.max_episode_length)
-        reset_env_ids = (self.reset_buf > 0).nonzero(as_tuple=False).flatten()
-        self.reset_idx(reset_env_ids)
-
         self.rew_buf[:] = 0.0
         for name, fn in self.reward_functions.items():
             rew = fn()
@@ -252,6 +343,12 @@ class FrankaGraspEnv:
         self.episode_sums["met_is_grasped"] = torch.max(self.episode_sums["met_is_grasped"], self.reached_cube.float())
         self.episode_sums["met_total_reward"] += self.rew_buf
 
+        additional_obs = []
+        if self.use_jenga:
+            additional_obs = [
+                torch.cat([_jenga.get_qpos() for _jenga in self.jenga], dim=-1)
+            ]
+
         self.obs_buf = torch.cat(
             [
                 self.dof_pos,                               # 9 dof positions
@@ -261,12 +358,19 @@ class FrankaGraspEnv:
                 self.cube_quat,                             # 4 cube orientation
                 self.finger_joint1_pos,                     # 3 finger_joint1 position (NEW)
                 self.finger_joint2_pos,                     # 3 finger_joint2 position (NEW)
+                *additional_obs,
                 self.actions,                               # 9 last commanded actions
                 (self.reached_cube > 0.5).float().unsqueeze(-1),  # 1 is_grasped flag
                 self.target_pos,                            # 3 target position for conditioning
             ],
             dim=-1,
         )
+
+        is_nan = (torch.isnan(self.obs_buf).any()) | (torch.isnan(self.actions).any()) | (torch.isnan(self.rew_buf).any())
+        self.rew_buf = torch.nan_to_num(self.rew_buf, nan=0.0)
+        self.reset_buf = (self.episode_length_buf >= self.max_episode_length) | is_nan
+        reset_env_ids = (self.reset_buf > 0).nonzero(as_tuple=False).flatten()
+        self.reset_idx(reset_env_ids)
 
         if self.save_video:
             if self.episode_length_buf.max() % 100 == 0:
@@ -291,7 +395,9 @@ class FrankaGraspEnv:
         if len(env_ids) == 0:
             return
 
-        # Reset Franka dofs
+        self.obs_buf[env_ids] = 0.0
+        self.actions[env_ids, :-1] = self.default_dof_pos[:-2]
+        self.actions[env_ids, -1] = (self.default_dof_pos[-1] + self.default_dof_pos[-2])
         self.dof_pos[env_ids] = self.default_dof_pos
         self.dof_vel[env_ids] = 0.0
         self.franka.set_dofs_position(
@@ -301,24 +407,29 @@ class FrankaGraspEnv:
             envs_idx=env_ids,
         )
 
-        # Randomize cube location on the table, etc.
-        # For instance, x in [0.60..0.70], y in [-0.05..0.05], z = table height + half cube
-        x_vals = gs_rand_float(
-            self.env_cfg["cube_spawn_range_x"][0],
-            self.env_cfg["cube_spawn_range_x"][1],
-            (len(env_ids),),
-            self.device,
-        )
-        y_vals = gs_rand_float(
-            self.env_cfg["cube_spawn_range_y"][0],
-            self.env_cfg["cube_spawn_range_y"][1],
-            (len(env_ids),),
-            self.device,
-        )
-        z_vals = torch.ones_like(x_vals) * self.cube_init_z
+        if self.use_jenga:
+            for i, _jenga in enumerate(self.jenga):
+                init_pos = self.pre_init_jenga_pos[env_ids, i, :]
+                _jenga.set_qpos(init_pos, envs_idx=env_ids)
 
-        cube_pos_reset = torch.stack((x_vals, y_vals, z_vals), dim=-1)
-        self.cube_handles.set_pos(cube_pos_reset, zero_velocity=True, envs_idx=env_ids)
+            cube_pos_reset = self.cube_handles.get_pos()
+        else:
+            x_vals = gs_rand_float(
+                self.env_cfg["cube_spawn_range_x"][0],
+                self.env_cfg["cube_spawn_range_x"][1],
+                (len(env_ids),),
+                self.device,
+            )
+            y_vals = gs_rand_float(
+                self.env_cfg["cube_spawn_range_y"][0],
+                self.env_cfg["cube_spawn_range_y"][1],
+                (len(env_ids),),
+                self.device,
+            )
+            z_vals = torch.ones_like(x_vals) * self.cube_init_z
+
+            cube_pos_reset = torch.stack((x_vals, y_vals, z_vals), dim=-1)
+            self.cube_handles.set_pos(cube_pos_reset, zero_velocity=True, envs_idx=env_ids)
 
         target_offset_range_x = self.env_cfg.get("target_offset_range_x")
         target_offset_range_y = self.env_cfg.get("target_offset_range_y")
@@ -389,7 +500,16 @@ class FrankaGraspEnv:
         is_collided = ((contacts['geom_b'][:, :, None] == self.franka_arm_links[None, None, :]).any(dim=-1) & contacts['valid_mask']).any(dim=-1)
         no_floor_collision = (1 - is_collided.float()).float()
         # no_floor_collision = torch.zeros_like(gripper_box)
-    
+
+        additional_rewards = {}
+        if self.use_jenga:
+            cur_block_pos = torch.stack([_jenga.get_qpos() for _jenga in self.jenga_base], dim=1)
+            cur_block_vel = torch.stack([_jenga.get_dofs_velocity() for _jenga in self.jenga_base], dim=1)
+            tower_pos_rew = 1 - torch.tanh(5 * torch.norm((cur_block_pos - self.init_jenga_pos[:, :-1, :]).reshape(self.init_jenga_pos.shape[0], -1), dim=-1))
+            tower_vel_rew = 1 - torch.tanh(5 * torch.norm((cur_block_vel).reshape(self.init_jenga_pos.shape[0], -1), dim=-1))
+            additional_rewards["jenga_tower_pos"] = tower_pos_rew
+            additional_rewards["jenga_tower_vel"] = tower_vel_rew
+
         rewards = {
             "gripper_box": gripper_box,
             "box_target": box_target,
@@ -397,7 +517,11 @@ class FrankaGraspEnv:
             "robot_target_qpos": robot_target_qpos,
             "is_grasped": (self.reached_cube > 0.5).float(),
             "is_target_reached": (self.reached_target > 0.5).float(),
+            **additional_rewards,
         }
+        for k in rewards.keys():
+            rewards[k] = torch.nan_to_num(rewards[k], nan=0.0)
+
         return rewards
 
     def _quaternion_distance(self, q1, q2):
@@ -423,6 +547,12 @@ class FrankaGraspEnv:
 
     def _reward_is_target_reached(self):
         return self._reward_components()["is_target_reached"]
+
+    def _reward_jenga_tower_pos(self):
+        return self._reward_components()["jenga_tower_pos"]
+
+    def _reward_jenga_tower_vel(self):
+        return self._reward_components()["jenga_tower_vel"]
 
     @staticmethod
     def quat_to_rotmat(q: torch.Tensor) -> torch.Tensor:

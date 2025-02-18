@@ -3,7 +3,7 @@ import os
 import pickle
 import shutil
 
-from franka_grasp_env_v7 import FrankaGraspEnv
+from franka_grasp_env_v8 import FrankaGraspEnv
 from rsl_rl.runners import OnPolicyRunner
 import genesis as gs
 import torch

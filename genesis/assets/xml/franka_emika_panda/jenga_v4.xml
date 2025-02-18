@@ -1,0 +1,137 @@
+<mujoco model='jenga'>
+    <compiler coordinate='local' angle='radian' />
+    <default>
+        <joint limited='false'/>
+        <geom contype='0' conaffinity='0' />
+    </default>
+
+    <asset>
+        <material name="geom" rgba=".9 .9 .9 1"/>
+    </asset>
+
+    <worldbody>
+        <body pos='.15 .05 0.3'>
+            <freejoint/>
+            <geom type='box' size='.15 .05 .015' />
+            <geom type='box' size='.15 .05 .015'  quat='1 -0.1e-03  1.6e-03 0' pos='0 0 .029'/>
+            
+        </body>
+        <body pos='.15 .15 0.3'>
+            <freejoint/>
+            <geom type='box' size='.15 .05 .015' />
+            <geom type='box' size='.15 .05 .015'  quat='1 -0.8e-03  1.0e-03 0' pos='0 0 .029'/>
+        </body>
+        <!-- <body pos='.15 .25 0.3'>
+            <freejoint/>
+            <geom type='box' size='.15 .05 .015' />
+            <geom type='box' size='.15 .05 .015'  quat='1  1.1e-03 -0.8e-03 0' pos='0 0 .029'/>
+            <inertial mass="4.970684" pos="0.003875 0.002081 -0.04762"
+          fullinertia="0.70337 0.70661 0.0091170 -0.00013900 0.0067720 0.019169"/>
+        </body>
+        <body pos='.05 .15 0.4'>
+            <freejoint/>
+            <geom type='box' size='.05 .15 .015' />
+            <geom type='box' size='.05 .15 .015'  quat='1 -0.6e-03  0.2e-03 0' pos='0 0 .029'/>
+        </body>
+        <body pos='.15 .15 0.4'>
+            <freejoint/>
+            <geom type='box' size='.05 .15 .015' />
+            <geom type='box' size='.05 .15 .015'  quat='1 -1.6e-03  1.5e-03 0' pos='0 0 .029'/>
+        </body>
+        <body pos='.25 .15 0.4'>
+            <freejoint/>
+            <geom type='box' size='.05 .15 .015' />
+            <geom type='box' size='.05 .15 .015'  quat='1 -0.8e-03 -0.1e-03 0' pos='0 0 .029'/>
+        </body>
+        <body pos='.15 .05 0.5'>
+            <freejoint/>
+            <geom type='box' size='.15 .05 .015' />
+            <geom type='box' size='.15 .05 .015'  quat='1 -1.3e-03  0.1e-03 0' pos='0 0 .029'/>
+        </body>
+        <body pos='.15 .15 0.5'>
+            <freejoint/>
+            <geom type='box' size='.15 .05 .015' />
+            <geom type='box' size='.15 .05 .015'  quat='1 -1.4e-03 -1.7e-03 0' pos='0 0 .029'/>
+        </body>
+        <body pos='.15 .25 0.5'>
+            <freejoint/>
+            <geom type='box' size='.15 .05 .015' />
+            <geom type='box' size='.15 .05 .015'  quat='1  1.9e-03  1.1e-03 0' pos='0 0 .029'/>
+        </body>
+        <body pos='.05 .15 0.6'>
+            <freejoint/>
+            <geom type='box' size='.05 .15 .015' />
+            <geom type='box' size='.05 .15 .015'  quat='1  0.1e-03  0.4e-03 0' pos='0 0 .029'/>
+        </body>
+        <body pos='.15 .15 0.6'>
+            <freejoint/>
+            <geom type='box' size='.05 .15 .015' />
+            <geom type='box' size='.05 .15 .015'  quat='1  0.7e-03  2.4e-03 0' pos='0 0 .029'/>
+        </body>
+        <body pos='.25 .15 0.6'>
+            <freejoint/>
+            <geom type='box' size='.05 .15 .015' />
+            <geom type='box' size='.05 .15 .015'  quat='1 -0.8e-03 -1.3e-03 0' pos='0 0 .029'/>
+        </body>
+        <body pos='.15 .05 0.7'>
+            <freejoint/>
+            <geom type='box' size='.15 .05 .015' />
+            <geom type='box' size='.15 .05 .015'  quat='1 -1.0e-03  0.1e-03 0' pos='0 0 .029'/>
+        </body>
+        <body pos='.15 .15 0.7'>
+            <freejoint/>
+            <geom type='box' size='.15 .05 .015' />
+            <geom type='box' size='.15 .05 .015'  quat='1  1.5e-03 -1.2e-03 0' pos='0 0 .029'/>
+        </body>
+        <body pos='.15 .25 0.7'>
+            <freejoint/>
+            <geom type='box' size='.15 .05 .015' />
+            <geom type='box' size='.15 .05 .015'  quat='1  1.2e-03 -0.5e-03 0' pos='0 0 .029'/>
+        </body>
+        <body pos='.05 .15 0.8'>
+            <freejoint/>
+            <geom type='box' size='.05 .15 .015' />
+            <geom type='box' size='.05 .15 .015'  quat='1  1.7e-03  0.7e-03 0' pos='0 0 .029'/>
+        </body>
+        <body pos='.15 .15 0.8'>
+            <freejoint/>
+            <geom type='box' size='.05 .15 .015' />
+            <geom type='box' size='.05 .15 .015'  quat='1 -0.6e-03 -1.7e-03 0' pos='0 0 .029'/>
+        </body>
+        <body pos='.25 .15 0.8'>
+            <freejoint/>
+            <geom type='box' size='.05 .15 .015' />
+            <geom type='box' size='.05 .15 .015'  quat='1  0.5e-03  1.6e-03 0' pos='0 0 .029'/>
+        </body>
+        <body pos='.15 .05 0.9'>
+            <freejoint/>
+            <geom type='box' size='.15 .05 .015' />
+            <geom type='box' size='.15 .05 .015'  quat='1 -1.0e-03 -0.6e-03 0' pos='0 0 .029'/>
+        </body>
+        <body pos='.15 .15 0.9'>
+            <freejoint/>
+            <geom type='box' size='.15 .05 .015' />
+            <geom type='box' size='.15 .05 .015'  quat='1  0.2e-03 -0.0e-03 0' pos='0 0 .029'/>
+        </body>
+        <body pos='.15 .25 0.9'>
+            <freejoint/>
+            <geom type='box' size='.15 .05 .015' />
+            <geom type='box' size='.15 .05 .015'  quat='1  1.3e-03 -0.3e-03 0' pos='0 0 .029'/>
+        </body>
+        <body pos='.05 .15   1'>
+            <freejoint/>
+            <geom type='box' size='.05 .15 .015' />
+            <geom type='box' size='.05 .15 .015'  quat='1 -0.6e-03 -0.2e-03 0' pos='0 0 .029'/>
+        </body>
+        <body pos='.15 .15   1'>
+            <freejoint/>
+            <geom type='box' size='.05 .15 .015' />
+            <geom type='box' size='.05 .15 .015'  quat='1  0.9e-03 -1.0e-03 0' pos='0 0 .029'/>
+        </body>
+        <body pos='.25 .15   1'>
+            <freejoint/>
+            <geom type='box' size='.05 .15 .015' />
+            <geom type='box' size='.05 .15 .015'  quat='1  1.8e-03  1.1e-03 0' pos='0 0 .029'/>
+        </body> -->
+    </worldbody>
+</mujoco>

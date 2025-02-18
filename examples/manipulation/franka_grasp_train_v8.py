@@ -3,7 +3,7 @@ import os
 import pickle
 import shutil
 
-from franka_grasp_env_v7 import FrankaGraspEnv
+from franka_grasp_env_v8 import FrankaGraspEnv
 from rsl_rl.runners import OnPolicyRunner
 import genesis as gs
 import torch
@@ -46,7 +46,7 @@ def get_train_cfg(exp_name, max_iterations):
             "resume_path": None,
             "run_name": "",
             "save_interval": 100,
-            "eval_interval": 50,
+            "eval_interval": 10,
         },
         "runner_class_name": "OnPolicyRunner",
         "seed": 1,
@@ -56,7 +56,7 @@ def get_train_cfg(exp_name, max_iterations):
 def get_cfgs():
     env_cfg = {
         "franka_mjcf_path": "xml/franka_emika_panda/panda.xml",   # or URDF
-        "num_actions": 9,  # 7 arm + 2 fingers
+        "num_actions": 8,  # 7 arm + 1 finger split
         "dof_names": [
             "joint1", "joint2", "joint3", "joint4", "joint5", 
             "joint6", "joint7", "finger_joint1", "finger_joint2"
@@ -78,10 +78,8 @@ def get_cfgs():
         "force_upper": [87, 87, 87, 87, 12, 12, 12, 100, 100],
         "clip_actions": 1.0,
         "clip_actions_fingers": 1.0,
-        "action_scale": 3.14159,
-        "action_scale_fingers": 20.0,
-        "smooth_tanh_lam": 0.2098612289,
-        "smooth_tanh_lam_fingers": 0.05,
+        "action_scale": 0.12,
+        "action_scale_fingers": 0.04,
         "dt": 0.02,
         "substeps": 4,
         "episode_length_s": 4,
@@ -94,11 +92,12 @@ def get_cfgs():
         "target_offset_range_x": [-0.1, 0.1],
         "target_offset_range_y": [-0.1, 0.1],
         "target_offset_range_z": [0.2, 0.6],
+        "use_jenga": False,
     }
     obs_cfg = {
         # 9 dof pos, 9 dof vel, 2 dof force, 3 cube pos, 4 cube quat,
-        # 3 finger_joint1 pos, 3 finger_joint2 pos, 9 last action, 1 is_grasped flag => total 46
-        "num_obs": 46,
+        # 3 finger_joint1 pos, 3 finger_joint2 pos, 8 last action, 1 is_grasped flag => total 46
+        "num_obs": 45,
         "obs_scales": {
             "dof_vel": 1.0,
             "dof_force": 1.0,
@@ -123,6 +122,7 @@ def main():
     parser.add_argument("-B", "--num_envs", type=int, default=256)
     parser.add_argument("--max_iterations", type=int, default=1000)
     parser.add_argument("--save_video", action="store_true", help="Save video of the environment")
+    parser.add_argument("--use_jenga", action="store_true", help="Use Jenga tower reward")
     args = parser.parse_args()
 
     gs.init(logging_level="warning")
@@ -149,6 +149,15 @@ def main():
     udid = torch.cuda.get_device_properties(selected_device).uuid
     print(f"Selected device UDID: {udid}")
     device = torch.device(f"cuda:{selected_device}")
+
+    if args.use_jenga:
+        reward_cfg["reward_scales"]["jenga_tower_pos"] = 1.0
+        reward_cfg["reward_scales"]["jenga_tower_vel"] = 1.0
+        env_cfg["use_jenga"] = True
+        env_cfg["dt"] = 0.02
+        env_cfg["substeps"] = 32
+        env_cfg['action_scale'] /= (0.04 / env_cfg["dt"])
+        env_cfg['action_scale_fingers'] /= (0.04 / env_cfg["dt"])
 
     # Create environment
     env = FrankaGraspEnv(

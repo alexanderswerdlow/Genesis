@@ -88,12 +88,12 @@ class FrankaGraspEnv:
             ),
         )
 
-        # ex: MJCF with "xml/franka_emika_panda/panda.xml", or URDF version
         self.franka = self.scene.add_entity(
             gs.morphs.MJCF(file=env_cfg["franka_mjcf_path"]),
-            # material=gs.materials.Rigid(coup_friction=1.0),
-            # visualize_contact=True,
-            # vis_mode="collision",
+        )
+
+        self.jenga = self.scene.add_entity(
+            gs.morphs.MJCF(file='examples/manipulation/jenga.xml'),
         )
         
         self.save_video = save_video
@@ -187,9 +187,12 @@ class FrankaGraspEnv:
             self.franka.get_joint("finger_joint2").link.idx,
         ], device=self.device, dtype=gs.tc_int)
 
+        self.init_jenga_pos = self.jenga.get_pos()
+
         self.reset()
         self.num_steps = 0
         self.iter = 0
+        breakpoint()
 
     def step(self, actions):
         self.num_steps += 1
@@ -197,6 +200,7 @@ class FrankaGraspEnv:
         self.actions[:, :-2] = smooth_tanh(self.actions[:, :-2], lam=self.env_cfg.get("smooth_tanh_lam", 0.2098612289))
         self.actions[:, -2:] = smooth_tanh(self.actions[:, -2:], lam=self.env_cfg.get("smooth_tanh_lam_fingers", 0.2098612289))
 
+        self.actions = smooth_tanh(actions)
         target_dof_pos = self.actions[:, :-2] * self.env_cfg["action_scale"]
         target_dof_force = self.actions[:, -2:] * self.env_cfg["action_scale_fingers"]
         self.franka.control_dofs_position(target_dof_pos + self.default_dof_pos[:-2], self.arm_dofs)
@@ -329,6 +333,8 @@ class FrankaGraspEnv:
         target_offsets = torch.stack((target_offset_x, target_offset_y, target_offset_z), dim=-1)
         new_target_pos = cube_pos_reset + target_offsets
         self.target_pos[env_ids] = new_target_pos
+
+        self.jenga.set_pos(self.init_jenga_pos + torch.tensor([0.5, 0.5, 0.0], device=self.device), zero_velocity=True, envs_idx=env_ids)
 
         self.episode_length_buf[env_ids] = 0
         self.reset_buf[env_ids] = 0

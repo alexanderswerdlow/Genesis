@@ -1,0 +1,12 @@
+<mujoco>
+  <asset>
+    <material name="block_mat" rgba="1.0 0 0 1.0" specular="0.25" shininess="0.10" reflectance="0.10"></material>
+  </asset>
+  <worldbody>
+    <body name="jenga">
+      <joint type="free"/>
+      <geom type="box" size="1.125 1.375 .075" material="block_mat" />
+      <geom type='box' size="1.125 1.375 .075" material="block_mat" quat='1 -0.1e-03  1.6e-03 0' pos='0 0 2.29'/>
+    </body>
+  </worldbody>
+</mujoco>
